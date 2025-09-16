@@ -18,7 +18,7 @@ function FlyToLocation({ lat, lng }) {
 }
 
 export default function FreeGeoSearch() {
-  const [query, setQuery] = useState("Eiffel Tower, Paris");
+  const [query, setQuery] = useState("Dhaka, Bangladesh");
   const [coords, setCoords] = useState(null);
   const [address, setAddress] = useState("");
   const [imgUrl, setImgUrl] = useState(null);
