@@ -24,14 +24,32 @@ export default function FreeGeoSearch() {
   const [imgUrl, setImgUrl] = useState(null);
   const imgWrapRef = useRef();
 
+  async function fetchUnsplashImage(q) {
+    const accessKey = "LhOAWCMcYQq5krpmJbYuAfHcVs7AJ-_j-Ue_144vAzg"; // 🔑 replace with your Unsplash key
+    const url = `https://api.unsplash.com/search/photos?query=${encodeURIComponent(
+      q
+    )}&per_page=1&client_id=${accessKey}`;
+
+    try {
+      const res = await fetch(url);
+      const data = await res.json();
+      if (data.results && data.results.length > 0) {
+        return data.results[0].urls.small;
+      }
+    } catch (err) {
+      console.error("Unsplash fetch error", err);
+    }
+    return null;
+  }
+
   async function doSearch() {
-    setImgUrl(null);
+    setImgUrl(null); // reset image
     try {
       const res = await fetch(
         `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(
           query
         )}&limit=1&addressdetails=1`,
-        { headers: { "Accept": "application/json" } }
+        { headers: { Accept: "application/json" } }
       );
       const data = await res.json();
       if (data.length === 0) {
@@ -39,31 +57,19 @@ export default function FreeGeoSearch() {
         return;
       }
       const top = data[0];
-      setCoords({ lat: parseFloat(top.lat), lng: parseFloat(top.lon) });
+      const lat = parseFloat(top.lat);
+      const lng = parseFloat(top.lon);
+      setCoords({ lat, lng });
       setAddress(top.display_name);
+
+      // move focus to image box so single Tab shows image
+      setTimeout(() => {
+        imgWrapRef.current?.focus();
+      }, 50);
     } catch (err) {
       console.error(err);
       alert("Error during search.");
     }
-  }
-
-  async function fetchCommonsImage(lat, lng) {
-    const url = `https://commons.wikimedia.org/w/api.php?action=query&format=json&origin=*&prop=imageinfo|coordinates&generator=geosearch&ggscoord=${lat}%7C${lng}&ggsradius=100&ggslimit=10&iiprop=url|extmetadata`;
-    try {
-      const res = await fetch(url);
-      const data = await res.json();
-      if (data.query && data.query.pages) {
-        const pages = Object.values(data.query.pages);
-        for (const p of pages) {
-          if (p.imageinfo && p.imageinfo.length) {
-            return p.imageinfo[0].url;
-          }
-        }
-      }
-    } catch (err) {
-      console.error("Commons fetch error", err);
-    }
-    return null;
   }
 
   async function handleImageFocus() {
@@ -72,13 +78,18 @@ export default function FreeGeoSearch() {
       return;
     }
     setImgUrl("loading");
-    const img = await fetchCommonsImage(coords.lat, coords.lng);
+
+    // Try Unsplash with query first, then address
+    const img =
+      (await fetchUnsplashImage(query)) ||
+      (address ? await fetchUnsplashImage(address) : null);
+
     setImgUrl(img || "notfound");
   }
 
   return (
     <div className="p-4 space-y-4">
-      <h2 className="text-xl font-bold">Free Search → OSM + Wikimedia</h2>
+      <h2 className="text-xl font-bold">Free Search → OSM + Unsplash</h2>
 
       <div className="flex gap-2">
         <input
@@ -119,7 +130,7 @@ export default function FreeGeoSearch() {
           <strong>Address:</strong> {address} <br />
           <a
             className="text-blue-600 underline"
-            href={`https://www.openstreetmap.org/?mlat=${coords.lat}&mlon=${coords.lng}#map=18/${coords.lat}/${coords.lng}`}
+            href={`https://www.openstreetmap.org/?mlat=${coords?.lat}&mlon=${coords?.lng}#map=18/${coords?.lat}/${coords?.lng}`}
             target="_blank"
             rel="noreferrer"
           >
@@ -136,14 +147,16 @@ export default function FreeGeoSearch() {
       >
         {!coords && <span>Search a location first.</span>}
         {coords && imgUrl === null && (
-          <span>Press <strong>Tab</strong> here to load a nearby photo.</span>
+          <span>
+            Press <strong>Tab</strong> here to load a nearby photo.
+          </span>
         )}
         {imgUrl === "loading" && <span>Loading image…</span>}
         {imgUrl === "notfound" && (
-          <span>No Wikimedia image found nearby.</span>
+          <span>No Unsplash image found for this location.</span>
         )}
         {imgUrl && imgUrl !== "loading" && imgUrl !== "notfound" && (
-          <img src={imgUrl} alt="Nearby Wikimedia" className="max-h-64" />
+          <img src={imgUrl} alt="Location" className="max-h-64 rounded" />
         )}
       </div>
     </div>
