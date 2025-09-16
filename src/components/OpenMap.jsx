@@ -1,9 +1,9 @@
-import React, { useState, useRef } from "react";
+import React, { useState, useEffect } from "react";
 import { MapContainer, TileLayer, Marker, useMap } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
 import L from "leaflet";
 
-// Fix default marker icon in Leaflet + React
+// Fix default marker icon
 import iconUrl from "leaflet/dist/images/marker-icon.png";
 import iconShadow from "leaflet/dist/images/marker-shadow.png";
 const DefaultIcon = L.icon({ iconUrl, shadowUrl: iconShadow });
@@ -17,38 +17,65 @@ function FlyToLocation({ lat, lng }) {
   return null;
 }
 
+// helper to calculate distance in km
+function haversine(lat1, lon1, lat2, lon2) {
+  const R = 6371; // km
+  const dLat = (lat2 - lat1) * (Math.PI / 180);
+  const dLon = (lon2 - lon1) * (Math.PI / 180);
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(lat1 * (Math.PI / 180)) *
+      Math.cos(lat2 * (Math.PI / 180)) *
+      Math.sin(dLon / 2) *
+      Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
+}
+
 export default function FreeGeoSearch() {
-  const [query, setQuery] = useState("Dhaka, Bangladesh");
+  const [query, setQuery] = useState("Dhaka University");
+  const [userCoords, setUserCoords] = useState(null);
   const [coords, setCoords] = useState(null);
   const [address, setAddress] = useState("");
   const [imgUrl, setImgUrl] = useState(null);
-  const imgWrapRef = useRef();
 
-  async function fetchUnsplashImage(q) {
-    const accessKey = "LhOAWCMcYQq5krpmJbYuAfHcVs7AJ-_j-Ue_144vAzg"; // 🔑 replace with your Unsplash key
-    const url = `https://api.unsplash.com/search/photos?query=${encodeURIComponent(
-      q
-    )}&per_page=1&client_id=${accessKey}`;
-
-    try {
-      const res = await fetch(url);
-      const data = await res.json();
-      if (data.results && data.results.length > 0) {
-        return data.results[0].urls.small;
-      }
-    } catch (err) {
-      console.error("Unsplash fetch error", err);
+  // ========================
+  // 1. Detect user location on mount
+  // ========================
+  useEffect(() => {
+    if (!navigator.geolocation) {
+      alert("Geolocation not supported.");
+      return;
     }
-    return null;
-  }
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setUserCoords({
+          lat: pos.coords.latitude,
+          lng: pos.coords.longitude,
+        });
+      },
+      (err) => {
+        console.error(err);
+        alert("Unable to get your location.");
+      }
+    );
+  }, []);
 
+  // ========================
+  // 2. Search and pick nearest location
+  // ========================
   async function doSearch() {
-    setImgUrl(null); // reset image
+    if (!userCoords) {
+      alert("User location not ready yet.");
+      return;
+    }
+
+    setImgUrl(null);
     try {
       const res = await fetch(
         `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(
-          query
-        )}&limit=1&addressdetails=1`,
+          query + " Bangladesh"
+        )}&limit=5&addressdetails=1`,
         { headers: { Accept: "application/json" } }
       );
       const data = await res.json();
@@ -56,56 +83,76 @@ export default function FreeGeoSearch() {
         alert("No results found.");
         return;
       }
-      const top = data[0];
-      const lat = parseFloat(top.lat);
-      const lng = parseFloat(top.lon);
-      setCoords({ lat, lng });
-      setAddress(top.display_name);
 
-      // move focus to image box so single Tab shows image
-      setTimeout(() => {
-        imgWrapRef.current?.focus();
-      }, 50);
+      // find nearest to user
+      let nearest = null;
+      let minDist = Infinity;
+      for (const place of data) {
+        const lat = parseFloat(place.lat);
+        const lon = parseFloat(place.lon);
+        const dist = haversine(userCoords.lat, userCoords.lng, lat, lon);
+        if (dist < minDist) {
+          minDist = dist;
+          nearest = place;
+        }
+      }
+
+      if (nearest) {
+        setCoords({ lat: parseFloat(nearest.lat), lng: parseFloat(nearest.lon) });
+        setAddress(nearest.display_name);
+        fetchImage(nearest.display_name);
+      }
     } catch (err) {
       console.error(err);
       alert("Error during search.");
     }
   }
 
-  async function handleImageFocus() {
-    if (!coords) {
-      setImgUrl(null);
-      return;
-    }
+  // ========================
+  // 3. Unsplash Image Fetch
+  // ========================
+  async function fetchImage(queryText) {
+    const UNSPLASH_ACCESS_KEY = "LhOAWCMcYQq5krpmJbYuAfHcVs7AJ-_j-Ue_144vAzg"; // replace with your Unsplash API key
     setImgUrl("loading");
-
-    // Try Unsplash with query first, then address
-    const img =
-      (await fetchUnsplashImage(query)) ||
-      (address ? await fetchUnsplashImage(address) : null);
-
-    setImgUrl(img || "notfound");
+    try {
+      const res = await fetch(
+        `https://api.unsplash.com/search/photos?query=${encodeURIComponent(
+          queryText + " Bangladesh"
+        )}&client_id=${UNSPLASH_ACCESS_KEY}&per_page=1`
+      );
+      const data = await res.json();
+      if (data.results && data.results.length > 0) {
+        setImgUrl(data.results[0].urls.small);
+      } else {
+        setImgUrl("notfound");
+      }
+    } catch (err) {
+      console.error("Unsplash fetch error", err);
+      setImgUrl("notfound");
+    }
   }
 
   return (
     <div className="p-4 space-y-4">
-      <h2 className="text-xl font-bold">Free Search → OSM + Unsplash</h2>
+      <h2 className="text-xl font-bold">Bangladesh Location Search</h2>
 
+      {/* Search Box + Button */}
       <div className="flex gap-2">
         <input
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           className="border rounded px-3 py-2 flex-1"
-          placeholder="Type address / place name"
+          placeholder="Type place in Bangladesh"
         />
         <button
           onClick={doSearch}
           className="bg-blue-600 text-white px-4 py-2 rounded"
         >
-          Search
+          Search Nearest
         </button>
       </div>
 
+      {/* Map */}
       <div className="h-80 rounded overflow-hidden">
         <MapContainer
           center={[23.7806, 90.2794]}
@@ -125,9 +172,10 @@ export default function FreeGeoSearch() {
         </MapContainer>
       </div>
 
+      {/* Address */}
       {address && (
         <p className="text-sm text-gray-700">
-          <strong>Address:</strong> {address} <br />
+          <strong>Nearest Address:</strong> {address} <br />
           <a
             className="text-blue-600 underline"
             href={`https://www.openstreetmap.org/?mlat=${coords?.lat}&mlon=${coords?.lng}#map=18/${coords?.lat}/${coords?.lng}`}
@@ -139,24 +187,15 @@ export default function FreeGeoSearch() {
         </p>
       )}
 
-      <div
-        ref={imgWrapRef}
-        tabIndex="0"
-        onFocus={handleImageFocus}
-        className="border-2 border-dashed border-gray-400 p-4 rounded min-h-[150px] flex items-center justify-center focus:outline-blue-500"
-      >
+      {/* Image Box */}
+      <div className="border-2 border-dashed border-gray-400 p-4 rounded min-h-[150px] flex items-center justify-center">
         {!coords && <span>Search a location first.</span>}
-        {coords && imgUrl === null && (
-          <span>
-            Press <strong>Tab</strong> here to load a nearby photo.
-          </span>
-        )}
         {imgUrl === "loading" && <span>Loading image…</span>}
         {imgUrl === "notfound" && (
           <span>No Unsplash image found for this location.</span>
         )}
         {imgUrl && imgUrl !== "loading" && imgUrl !== "notfound" && (
-          <img src={imgUrl} alt="Location" className="max-h-64 rounded" />
+          <img src={imgUrl} alt="Nearby" className="max-h-64" />
         )}
       </div>
     </div>
