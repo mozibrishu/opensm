@@ -44,7 +44,8 @@ export default function FreeGeoSearch() {
   // ========================
   useEffect(() => {
     if (!navigator.geolocation) {
-      alert("Geolocation not supported.");
+      console.warn("Geolocation not supported, using Dhaka default.");
+      setUserCoords({ lat: 23.8103, lng: 90.4125 }); // Dhaka
       return;
     }
     navigator.geolocation.getCurrentPosition(
@@ -55,8 +56,8 @@ export default function FreeGeoSearch() {
         });
       },
       (err) => {
-        console.error(err);
-        alert("Unable to get your location.");
+        console.warn("User denied location, using Dhaka default.");
+        setUserCoords({ lat: 23.8103, lng: 90.4125 }); // Dhaka fallback
       }
     );
   }, []);
@@ -155,7 +156,7 @@ export default function FreeGeoSearch() {
       {/* Map */}
       <div className="h-80 rounded overflow-hidden">
         <MapContainer
-          center={[23.7806, 90.2794]}
+          center={[23.8103, 90.4125]} // Default to Dhaka
           zoom={13}
           style={{ height: "100%", width: "100%" }}
         >
